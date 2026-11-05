@@ -1,177 +1,40 @@
 #!/system/bin/sh
-#set -e
-#set -x
+# Installer for KSU Tailscale. Runs inside the KernelSU/Magisk installer.
 
-#exec > /data/local/tmp/installer_log.txt 2>&1
+type ui_print >/dev/null 2>&1 || ui_print() { echo "$1"; }
 
-# Variables
-SKIPMOUNT=false
-PROPFILE=true
-MONA=true
+ui_print "- Installing KSU Tailscale"
 
-# Set module directory
-MODDIR=${0%/*}
-TMPDIR="${TMPDIR:-/dev/tmp}"
-MODPATH="${MODPATH:-/data/local/tmp}"
-LOG=/sdcard/tailscale.log
+ABI=$(getprop ro.product.cpu.abi)
+case "$ABI" in
+    arm64-v8a)   ARCH=arm64; SRC=arm64-v8a ;;
+    armeabi-v7a) ARCH=arm;   SRC=armeabi-v7a ;;
+    *) abort "! Unsupported ABI: $ABI (need arm64-v8a or armeabi-v7a)" ;;
+esac
 
-# Replacement list
-REPLACE="
-/system/app/Launcher
-/system/priv-app/Lawnchair
-/system/priv-app/AsusLauncherDev
-/system/priv-app/NothingLauncher3
-/system/product/priv-app/ParanoidQuickStep
-/system/product/priv-app/ShadyQuickStep
-/system/product/priv-app/TrebuchetQuickStep
-/system/product/priv-app/NusantaraLauncherQuickStep
-/system/product/overlay/PixelLauncherIconsOverlay
-/system/product/overlay/CustomPixelLauncherOverlay
-/system/product/overlay/ThemedIconsOverlay.apk
-/system/product/overlay/PixelLauncherIconsOverlay.apk
-/system/product/overlay/CustomPixelLauncherOverlay.apk
-/system/product/overlay/Launcher3QuickStep__auto_generated_rro_product.apk
-/system/product/overlay/DerpLauncherQuickStep__auto_generated_rro_product.apk
-/system/product/overlay/ParanoidLauncherTranslation.apk
-/system/product/overlay/ParanoidLauncherOverlay.apk
-/system/product/overlay/Launcher3Overlay.apk
-/system/product/overlay/DerpLauncherOverlay.apk
-/system/system_ext/priv-app/NusantaraLauncherQuickStep
-/system/system_ext/priv-app/DerpLauncherQuickStep
-/system/system_ext/priv-app/DerpThemePicker
-/system/system_ext/priv-app/TrebuchetQuickStep
-/system/system_ext/priv-app/Lawnchair
-/system/system_ext/priv-app/ArrowLauncher
-/system/system_ext/priv-app/ParanoidQuickStep
-/system/system_ext/priv-app/ParanoidThemePicker
-/system/system_ext/priv-app/Launcher3QuickStep
-/system/system_ext/priv-app/Launcher3QuickStepMock
-/system/system_ext/priv-app/WallpaperPickerGoogleRelease
-/system/system_ext/priv-app/ThemePicker
-/system_ext/priv-app/AfterHomeQuickStep
-/system/product/priv-app/AfterHomeQuickStep
-/system_ext/priv-app/AfterHomeQuickStep
-/system_ext/priv-app/ThemePicker
-/system_ext/priv-app/Launcher3QuickStep
-"
+ui_print "- Device ABI: $ABI"
 
-# Variables
-MODNAME=$(grep_prop name "$TMPDIR/module.prop")
-MODVER=$(grep_prop version "$TMPDIR/module.prop")
-DV=$(grep_prop author "$TMPDIR/module.prop")
+mkdir -p "$MODPATH/bin"
 
-Device=$(getprop ro.product.device)
-Model=$(getprop ro.product.model)
-Brand=$(getprop ro.product.brand)
-Manufacturer=$(getprop ro.product.system.manufacturer)
-Architecture=$(getprop ro.product.cpu.abi)
-SDK=$(getprop ro.system.build.version.sdk)
-ABI=$(getprop ro.system.product.cpu.abilist)
-Android=$(getprop ro.system.build.version.release)
-Type=$(getprop ro.system.build.type)
-Built=$(getprop ro.system.build.date)
-Time=$(date "+%d, %b - %H:%M %Z")
-FINGERPRINT=$(getprop ro.system.build.fingerprint)
-ID=$(getprop ro.system.build.id)
-BTAG=$(getprop ro.system.build.tags)
-BVER=$(getprop ro.system.build.version.incremental)
-SP=$(getprop ro.build.version.security_patch)
-HOST=$(getprop ro.build.host)
-FBE=$(getprop ro.crypto.state)
-FLAVOUR=$(getprop ro.build.flavor)
-LOCALE=$(getprop ro.product.locale)
-BT=$(getprop bt.max.hfpclient.connections)
-CHIPSET=$(getprop ro.device.chipset)
-DISPLAY=$(getprop ro.device.display_resolution)
-NETFLIX=$(getprop ro.netflix.bsp_rev)
-NFC=$(getprop ro.nfc.port)
-MAINTAINER=$(getprop ro.device.maintainer)
-CID=$(getprop ro.com.google.clientidbase)
-SE=$(getenforce)
-
-# Logger
-debug() {
-    echo "$1" | tee -a "$LOG"
-}
-  
-# Installation starts
-debug " " 
-debug "-------------------------------------"
-debug "- Fetching module info..."
-debug "-------------------------------------"
-debug "- Author: $DV"
-debug "- Module：$MODNAME"
-debug "- Version：$MODVER"
-
-if [ "$BOOTMODE" ] && [ "$KSU" ]; then
-echo -n "- Provider："
-echo -n "KernelSU：$KSU_KERNEL_VER_CODE (kernel) + $KSU_VER_CODE (ksud)"
-debug " " 
-  if [ "$(which magisk)" ]; then
-    debug "-----------------------------------------------------------"
-    debug "! Multiple root implementation is NOT supported!"
-    abort "-----------------------------------------------------------"
-  fi
-elif [ "$BOOTMODE" ] && [ "$MAGISK_VER_CODE" ]; then
-echo -n "- Provider：💀 Magisk app"
-debug " " 
+if [ -f "$MODPATH/bin/$SRC/tailscale" ] && [ -f "$MODPATH/bin/$SRC/tailscaled" ]; then
+    # Binaries bundled in the zip take precedence (offline installs, pinned versions).
+    ui_print "- Using bundled Tailscale binaries"
+    mv "$MODPATH/bin/$SRC/tailscale" "$MODPATH/bin/tailscale"
+    mv "$MODPATH/bin/$SRC/tailscaled" "$MODPATH/bin/tailscaled"
 else
-debug "--------------------------------------------------------"
-debug "Installation from recovery is not supported"
-debug "Please install from KernelSU / Magisk or Apatch app"
-  abort "--------------------------------------------------------"
+    ui_print "- Fetching latest stable Tailscale for $ARCH..."
+    ARCH="$ARCH" sh "$MODPATH/fetch-release.sh" --install "$MODPATH/bin" \
+        || abort "! Could not fetch Tailscale. Check network, or bundle binaries in bin/$SRC/"
+    ui_print "- Fetched Tailscale $(cat "$MODPATH/bin/version")"
 fi
 
-# Device Info
-debug " " 
-debug "-------------------------------------"
-debug "- Fetching Device info..."
-debug "-------------------------------------"
-sleep 1
-debug "- Brand Name：$Brand"
-debug "- Device Name：$Device"
-debug "- Model Name：$Model"
-debug "- Device Manufacturer: $Manufacturer"
-debug "- RAM：$(free | grep Mem | awk '{print $2}')"
+rm -rf "$MODPATH/bin/arm64-v8a" "$MODPATH/bin/armeabi-v7a"
 
-# ROM Info
-debug " " 
-debug "-------------------------------------"
-debug "- Fetching ROM info..."
-debug "-------------------------------------"
-sleep 1
-debug "- Security Patch：$SP"
-debug "- Data Encryption：$FBE"
-debug "- Build ID：$ID"
-debug "- Build Tag：$BTAG"
-debug "- Build Flavour：$FLAVOUR"
-debug "- ROM Build Date：$Built"
-debug "- ROM Build Type：$Type"
+chmod 0755 "$MODPATH/bin/tailscale" "$MODPATH/bin/tailscaled"
+chmod 0755 "$MODPATH/service.sh" "$MODPATH/action.sh" "$MODPATH/uninstall.sh" \
+           "$MODPATH/common.sh" "$MODPATH/fetch-release.sh"
 
-# System Info
-debug " " 
-debug "-------------------------------------"
-debug "- Fetching System info..."
-debug "-------------------------------------"
-sleep 1
-debug "- SE Linux Status：$SE"
-debug "- Privilege：$ROOT"
-debug "- Default Language：$LOCALE"
-debug "- Client ID：$CID"
-debug "- ABI SUPPORT：$ABI"
-debug "- Android Version：$Android"
-debug "- Kernel: $(uname -r)"
-debug "- CPU Architecture：$Architecture"
-debug "- SDK Version：$SDK"
-
-debug " " 
-debug "-------------------------------------"
-debug "- Optimising $MODNAME⚡"
-debug "-------------------------------------"
-debug " "
-debug "- Redirecting to release source..."
-debug "This module was released by 𝗠𝗘𝗢𝗪 𝗗𝗨𝗠𝗣"
-nohup am start -a android.intent.action.VIEW -d https://t.me/MeowRedirect >/dev/null 2>&1 &
-sleep 3
-
-sleep 1 && debug "Always download modules from release source"
+mkdir -p /data/adb/tailscale
+ui_print "- Runtime state: /data/adb/tailscale"
+ui_print "- Add an auth key to /data/adb/tailscale/authkey for unattended login"
+ui_print "- Done. Reboot or run the action button to start Tailscale."

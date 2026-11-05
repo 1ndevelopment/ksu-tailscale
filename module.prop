@@ -1,11 +1,6 @@
-id=
-name=
-version=v
-versionCode=
-author=𝗠𝗘𝗢𝗪𝗻𝗮 💅 || tg@MeowDump
-description=
-updateJson=
-support=https://t.me/MeowDump
-banner=https://raw.githubusercontent.com/MeowDump/MeowDump/refs/heads/main/Banner/mona1.png
-webuiIcon=icon.png
-actionIcon=icon.png
+id=ksu_tailscale
+name=KSU Tailscale
+version=v1.0.0
+versionCode=1
+author=1ndevelopment
+description=Runs the Tailscale daemon as a KernelSU/Magisk module. All state lives in /data/adb/tailscale and nothing is written to /system.
