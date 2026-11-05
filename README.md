@@ -48,8 +48,11 @@ Optional file `/data/adb/tailscale/config`, plain shell `KEY=VALUE` lines:
 
 ```sh
 TS_ACCEPT_DNS=false          # set true to let Tailscale manage DNS
+TS_TUN_MODE=userspace        # userspace (default) or kernel (uses tailscale0 when /dev/net/tun exists)
 TS_EXTRA_ARGS="--port=41641" # extra flags passed to tailscaled
 ```
+
+By default the daemon runs with `--tun=userspace-networking`, so it works under temporary root and doesn't install routing rules. Set `TS_TUN_MODE=kernel` only if userspace mode doesn't meet your needs.
 
 ## Disabling and removing
 
@@ -103,13 +106,31 @@ To check:
 
 If userspace mode connects, set `TS_EXTRA_ARGS="--tun=userspace-networking"` in `/data/adb/tailscale/config`. Repeated flags may conflict with the `--tun` the module passes, so verify which one takes effect in the log.
 
+### Plain `ssh` to tailnet devices from Termux
+
+In userspace mode (the default) there is no `tailscale0` interface, so plain `ssh`, `ping`, and other normal apps can't reach `100.x.x.x` addresses. `tailscale ssh` works because it goes through tailscaled directly.
+
+To use plain `ssh`, route the connection through `tailscale nc`. Add this to `~/.ssh/config` in Termux:
+
+```
+Host 100.*
+  ProxyCommand sudo /data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock nc %h %p
+```
+
+Then connect with `ssh user@100.x.x.x`.
+
+Notes:
+- The socket is root-owned, so the proxy runs through `sudo`. If `sudo` prompts for a password, the connection will hang or fail.
+- The target device must run an OpenSSH server (`sshd`) listening on the port you connect to.
+- MagicDNS names won't match the `Host 100.*` pattern. Use the `100.x.x.x` address, or add a `Host` entry for the device name with the same `ProxyCommand`.
+
 ## Logs
 
 `/data/adb/tailscale/tailscale.log`
 
 ## Notes
 
-- Kernel TUN is used when `/dev/net/tun` exists. Otherwise the module falls back to userspace networking.
+- Userspace networking is the default. Kernel TUN is used only when `TS_TUN_MODE=kernel` is set and `/dev/net/tun` exists.
 - The original template's installer redirected users to an external Telegram channel. That is not included here.
 
 ## License
