@@ -17,9 +17,13 @@ TAILSCALE="$MODDIR/bin/tailscale"
 # Defaults; override in $CONF (plain KEY=VALUE shell lines).
 TS_ACCEPT_DNS=false
 TS_EXTRA_ARGS=""
+# auto:      use kernel TUN (tailscale0) when /dev/net/tun is available or can
+#            be created; otherwise fall back to userspace networking. This keeps
+#            the module working on temporary-root devices while still exposing a
+#            real tailscale0 interface whenever the kernel supports it.
 # userspace: no kernel routes or ip rules are installed. Works under temporary root.
-# kernel:    uses tailscale0 and kernel routing when /dev/net/tun exists.
-TS_TUN_MODE=userspace
+# kernel:    use tailscale0 and kernel routing when /dev/net/tun exists.
+TS_TUN_MODE=auto
 
 load_config() {
     mkdir -p "$STATE_DIR"
@@ -32,8 +36,104 @@ log() {
     echo "$1"
 }
 
+# PIDs of tailscaled processes that belong to this module (not a system one).
+module_pids() {
+    found=0
+    for p in $(pidof tailscaled 2>/dev/null); do
+        if [ -r "/proc/$p/cmdline" ]; then
+            if tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null | grep -q "$STATE_DIR\|$MODDIR"; then
+                echo "$p"
+                found=1
+            fi
+        else
+            # No /proc info: assume any tailscaled is ours.
+            echo "$p"
+            found=1
+        fi
+    done
+    return 0
+}
+
 is_running() {
-    pidof tailscaled >/dev/null 2>&1
+    [ -n "$(module_pids)" ]
+}
+
+# Make sure /dev/net/tun exists. On temporary-root / minimal Android setups the
+# device node (and sometimes the tun module) is missing, which prevents
+# tailscaled from creating tailscale0. Best-effort: never abort on failure.
+ensure_tun() {
+    [ -c /dev/net/tun ] && return 0
+
+    mkdir -p /dev/net 2>/dev/null || true
+
+    # Try to load the tun kernel module if the tools are available.
+    if ! lsmod 2>/dev/null | grep -q '^tun[[:space:]]'; then
+        if command -v modprobe >/dev/null 2>&1; then
+            modprobe tun 2>/dev/null || true
+        fi
+        if ! [ -c /dev/net/tun ]; then
+            for ko in \
+                "/lib/modules/$(uname -r)/kernel/drivers/net/tun.ko" \
+                "/lib/modules/$(uname -r)/tun.ko" \
+                "/vendor/lib/modules/tun.ko" \
+                "/system/lib/modules/tun.ko"; do
+                [ -f "$ko" ] || continue
+                if command -v insmod >/dev/null 2>&1; then
+                    insmod "$ko" 2>/dev/null || true
+                fi
+                [ -c /dev/net/tun ] && break
+            done
+        fi
+    fi
+
+    # Create the device node by hand if the kernel supports tun but did not.
+    if [ ! -c /dev/net/tun ]; then
+        mknod /dev/net/tun c 10 200 2>/dev/null || true
+        chmod 0600 /dev/net/tun 2>/dev/null || true
+    fi
+
+    # SELinux on Android often blocks tun access for untrusted root contexts;
+    # relax it best-effort so tailscaled can open the device.
+    if command -v setenforce >/dev/null 2>&1; then
+        setenforce 0 2>/dev/null || true
+    fi
+
+    [ -c /dev/net/tun ]
+}
+
+# Kernel TUN installs fwmark policy-routing rules that force tailscaled's own
+# (marked) traffic through the "main"/"default" routing tables. On Android those
+# tables often have no default route, so the rules end in "unreachable" and
+# tailscaled reports "network is unreachable". Make sure "main" has a default
+# route before starting, best-effort.
+ensure_main_default_route() {
+    # IPv4
+    if ! ip route show table main 2>/dev/null | grep -q '^default'; then
+        line=$(ip -4 route get 1.1.1.1 2>/dev/null | head -n 1)
+        dev=$(printf '%s\n' "$line" | sed -n 's/.*dev \([^ ]*\).*/\1/p')
+        gw=$(printf '%s\n' "$line" | sed -n 's/.*via \([^ ]*\).*/\1/p')
+        if [ -n "$dev" ]; then
+            if [ -n "$gw" ]; then
+                ip route replace default via "$gw" dev "$dev" table main 2>/dev/null || true
+            else
+                ip route replace default dev "$dev" table main 2>/dev/null || true
+            fi
+        fi
+    fi
+    # IPv6
+    if ! ip -6 route show table main 2>/dev/null | grep -q '^default'; then
+        line=$(ip -6 route get 2606:4700:4700::1111 2>/dev/null | head -n 1)
+        dev=$(printf '%s\n' "$line" | sed -n 's/.*dev \([^ ]*\).*/\1/p')
+        gw=$(printf '%s\n' "$line" | sed -n 's/.*via \([^ ]*\).*/\1/p')
+        if [ -n "$dev" ]; then
+            if [ -n "$gw" ]; then
+                ip -6 route replace default via "$gw" dev "$dev" table main 2>/dev/null || true
+            else
+                ip -6 route replace default dev "$dev" table main 2>/dev/null || true
+            fi
+        fi
+    fi
+    return 0
 }
 
 start_ts() {
@@ -49,11 +149,37 @@ start_ts() {
         return 1
     fi
 
-    # Userspace networking by default. Kernel TUN installs routing rules that
-    # black-hole tailscaled's traffic on some devices, so it is opt-in only.
-    if [ "$TS_TUN_MODE" = kernel ] && [ -c /dev/net/tun ]; then
-        TUN=tailscale0
-    else
+    # Determine whether to use kernel TUN (tailscale0) or userspace networking.
+    # Kernel TUN needs /dev/net/tun; create it on demand for temporary-root
+    # devices, and fall back to userspace networking if it cannot be provided.
+    use_kernel=false
+    case "$TS_TUN_MODE" in
+        kernel) use_kernel=true ;;
+        auto)
+            if ensure_tun; then
+                use_kernel=true
+            else
+                log "no /dev/net/tun available; falling back to userspace networking"
+            fi
+            ;;
+        userspace) use_kernel=false ;;
+        *)
+            log "! unknown TS_TUN_MODE='$TS_TUN_MODE'; using userspace networking"
+            use_kernel=false
+            ;;
+    esac
+
+    if [ "$use_kernel" = true ]; then
+        if ! ensure_tun; then
+            log "! could not prepare /dev/net/tun; falling back to userspace networking"
+            use_kernel=false
+        else
+            ensure_main_default_route
+            TUN=tailscale0
+        fi
+    fi
+
+    if [ "$use_kernel" != true ]; then
         TUN=userspace-networking
     fi
 
@@ -90,13 +216,21 @@ start_ts() {
 }
 
 stop_ts() {
-    if ! is_running; then
+    pids=$(module_pids)
+    if [ -z "$pids" ]; then
         log "tailscaled not running"
+        rm -f "$SOCK"
         return 0
     fi
     log "stopping tailscaled"
-    for p in $(pidof tailscaled); do
-        kill "$p"
+    for p in $pids; do
+        kill "$p" 2>/dev/null || true
+    done
+    # Give it a moment to shut down.
+    i=0
+    while [ -n "$(module_pids)" ] && [ "$i" -lt 5 ]; do
+        sleep 1
+        i=$((i + 1))
     done
     rm -f "$SOCK"
 }

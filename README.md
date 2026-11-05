@@ -48,11 +48,11 @@ Optional file `/data/adb/tailscale/config`, plain shell `KEY=VALUE` lines:
 
 ```sh
 TS_ACCEPT_DNS=false          # set true to let Tailscale manage DNS
-TS_TUN_MODE=userspace        # userspace (default) or kernel (uses tailscale0 when /dev/net/tun exists)
+TS_TUN_MODE=auto             # auto (default: kernel TUN/tailscale0 when /dev/net/tun is available, else userspace), userspace, or kernel
 TS_EXTRA_ARGS="--port=41641" # extra flags passed to tailscaled
 ```
 
-By default the daemon runs with `--tun=userspace-networking`, so it works under temporary root and doesn't install routing rules. Set `TS_TUN_MODE=kernel` only if userspace mode doesn't meet your needs.
+By default (`TS_TUN_MODE=auto`) the module uses kernel TUN (`tailscale0`) when `/dev/net/tun` is available or can be created on the device, and falls back to `--tun=userspace-networking` otherwise. This keeps it working under temporary root while exposing a real `tailscale0` interface whenever the kernel supports it. Set `TS_TUN_MODE=userspace` to force userspace mode, or `TS_TUN_MODE=kernel` to require kernel TUN.
 
 ## Disabling and removing
 
@@ -85,6 +85,8 @@ alias ts='/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tails
    ```
 
 ### Suspected routing conflict (kernel TUN)
+
+The module now adds a default route to the `main` routing table automatically when using kernel TUN, which resolves the `network is unreachable` black-hole on most devices.
 
 With kernel TUN, tailscaled adds policy-routing rules that match its own marked packets (fwmark `0x80000`) and send them to tables that have no default route, followed by an `unreachable` rule. Connections then fail with `network is unreachable` even though the device has internet access.
 
@@ -130,7 +132,7 @@ Notes:
 
 ## Notes
 
-- Userspace networking is the default. Kernel TUN is used only when `TS_TUN_MODE=kernel` is set and `/dev/net/tun` exists.
+- `TS_TUN_MODE=auto` (default) prefers kernel TUN (`tailscale0`) and falls back to userspace networking when `/dev/net/tun` cannot be used. Kernel TUN installs routing rules that can break connectivity on some devices; set `TS_TUN_MODE=userspace` if that happens.
 - The original template's installer redirected users to an external Telegram channel. That is not included here.
 
 ## License

@@ -16,4 +16,8 @@ if is_running; then
     "$TAILSCALE" --socket="$SOCK" status 2>/dev/null | head -n 5
 else
     echo "tailscaled: stopped"
+    if [ -f "$LOG" ]; then
+        echo "--- last log lines ---"
+        tail -n 20 "$LOG"
+    fi
 fi
