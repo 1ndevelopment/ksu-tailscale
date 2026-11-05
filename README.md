@@ -114,7 +114,10 @@ To use plain `ssh`, route the connection through `tailscale nc`. Add this to `~/
 
 ```
 Host 100.*
-  ProxyCommand sudo /data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock nc %h %p
+  ProxyCommand su -c "/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock nc %h %p"
+
+Match exec "su -c '/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock status' | awk '{print $2}' | grep -qx %h"
+  ProxyCommand su -c "/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock nc %h %p"
 ```
 
 Then connect with `ssh user@100.x.x.x`.
