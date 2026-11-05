@@ -17,6 +17,9 @@ TAILSCALE="$MODDIR/bin/tailscale"
 # Defaults; override in $CONF (plain KEY=VALUE shell lines).
 TS_ACCEPT_DNS=false
 TS_EXTRA_ARGS=""
+# userspace: no kernel routes or ip rules are installed. Works under temporary root.
+# kernel:    uses tailscale0 and kernel routing when /dev/net/tun exists.
+TS_TUN_MODE=userspace
 
 load_config() {
     mkdir -p "$STATE_DIR"
@@ -46,8 +49,9 @@ start_ts() {
         return 1
     fi
 
-    # Kernel TUN if available, otherwise userspace networking.
-    if [ -c /dev/net/tun ]; then
+    # Userspace networking by default. Kernel TUN installs routing rules that
+    # black-hole tailscaled's traffic on some devices, so it is opt-in only.
+    if [ "$TS_TUN_MODE" = kernel ] && [ -c /dev/net/tun ]; then
         TUN=tailscale0
     else
         TUN=userspace-networking

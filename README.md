@@ -56,6 +56,53 @@ TS_EXTRA_ARGS="--port=41641" # extra flags passed to tailscaled
 - Disable without uninstalling: `touch /data/adb/modules/ksu_tailscale/disable`, then reboot.
 - Uninstall: remove the module in the manager. This stops the daemon and keeps `/data/adb/tailscale`. Delete that directory to wipe the node identity.
 
+## Troubleshooting
+
+Use `--socket` with every `tailscale` command. The default socket path doesn't match the module's.
+
+Alias for convenience (add to your Termux shell profile):
+
+```sh
+alias ts='/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock'
+```
+
+### Daemon starts but `tailscale up` hangs or reports "Logged out"
+
+1. Check that the device has a working connection from a root shell:
+   ```sh
+   ping -c 2 1.1.1.1
+   ```
+2. Check the log for `network is unreachable` lines:
+   ```sh
+   sudo tail -n 50 /data/adb/tailscale/tailscale.log
+   ```
+3. Check whether the control server is reachable:
+   ```sh
+   tailscale --socket=/data/adb/tailscale/tailscaled.sock netcheck
+   ```
+
+### Suspected routing conflict (kernel TUN)
+
+With kernel TUN, tailscaled adds policy-routing rules that match its own marked packets (fwmark `0x80000`) and send them to tables that have no default route, followed by an `unreachable` rule. Connections then fail with `network is unreachable` even though the device has internet access.
+
+To check:
+
+1. Stop the module with the action button, or run `sh /data/adb/modules/ksu_tailscale/action.sh`.
+2. Confirm the rules are gone:
+   ```sh
+   ip rule | grep -c 0x80000
+   ```
+   A count of `0` means they were cleared.
+3. Run the daemon in userspace mode in the foreground, which doesn't install those rules:
+   ```sh
+   cd /data/adb/modules/ksu_tailscale/bin
+   ./tailscaled --state=/data/adb/tailscale/tailscaled.state \
+     --socket=/data/adb/tailscale/tailscaled.sock --tun=userspace-networking
+   ```
+4. In a second root shell, run `netcheck` or `up` with `--socket`.
+
+If userspace mode connects, set `TS_EXTRA_ARGS="--tun=userspace-networking"` in `/data/adb/tailscale/config`. Repeated flags may conflict with the `--tun` the module passes, so verify which one takes effect in the log.
+
 ## Logs
 
 `/data/adb/tailscale/tailscale.log`

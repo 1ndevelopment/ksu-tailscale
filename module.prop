@@ -3,4 +3,4 @@ name=KSU Tailscale
 version=v1.0.0
 versionCode=1
 author=1ndevelopment
-description=Runs the Tailscale daemon as a KernelSU/Magisk module. All state lives in /data/adb/tailscale and nothing is written to /system.
+description=Runs the Tailscale daemon as a KernelSU/Magisk module. Works from temporary root: all state lives in /data/adb/tailscale and nothing is written to /system.
