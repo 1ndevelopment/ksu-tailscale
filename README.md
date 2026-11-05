@@ -113,9 +113,6 @@ In userspace mode (the default) there is no `tailscale0` interface, so plain `ss
 To use plain `ssh`, route the connection through `tailscale nc`. Add this to `~/.ssh/config` in Termux:
 
 ```
-Host 100.*
-  ProxyCommand su -c "/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock nc %h %p"
-
 Match exec "su -c '/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock status' | awk '{print $2}' | grep -qx %h"
   ProxyCommand su -c "/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock nc %h %p"
 ```
