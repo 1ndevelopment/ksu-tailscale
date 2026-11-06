@@ -110,7 +110,7 @@ If userspace mode connects, set `TS_EXTRA_ARGS="--tun=userspace-networking"` in 
 
 ### Plain `ssh` to tailnet devices from Termux
 
-In userspace mode (the default) there is no `tailscale0` interface, so plain `ssh`, `ping`, and other normal apps can't reach `100.x.x.x` addresses. `tailscale ssh` works because it goes through tailscaled directly.
+With kernel TUN (`tailscale0`, the default when available) plain `ssh`, `ping`, and other normal apps can reach `100.x.x.x` addresses directly. The `~/.ssh/config` ProxyCommand below is only needed when running in userspace mode (`TS_TUN_MODE=userspace`), where there is no `tailscale0` interface.
 
 To use plain `ssh`, route the connection through `tailscale nc`. Add this to `~/.ssh/config` in Termux:
 
