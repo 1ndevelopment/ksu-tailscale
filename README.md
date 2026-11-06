@@ -1,6 +1,6 @@
 # KSU Tailscale
 
-A KernelSU / Magisk module that runs the Tailscale daemon on Android. It is written to work under temporary root: everything runtime-related lives in `/data/adb/tailscale`, and the module never writes to `/system`.
+A KernelSU module that runs the Tailscale daemon on Android. It is written to work under temporary root: everything runtime-related lives in `/data/adb/tailscale`, and the module never writes to `/system`.
 
 ## Requirements
 
