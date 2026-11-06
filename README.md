@@ -126,6 +126,32 @@ Notes:
 - The target device must run an OpenSSH server (`sshd`) listening on the port you connect to.
 - MagicDNS names won't match the `Host 100.*` pattern. Use the `100.x.x.x` address, or add a `Host` entry for the device name with the same `ProxyCommand`.
 
+### DNS on temporary root
+
+Android's `/etc` is read-only, so Tailscale cannot rewrite `/etc/resolv.conf`.
+Keep `TS_ACCEPT_DNS=false` (the default). If a previous run enabled DNS
+management, turn it off:
+
+```sh
+/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock set --accept-dns=false
+/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock up --accept-dns=false --netfilter-mode=off
+```
+
+### Netfilter / `ip6tables` errors on Android
+
+Android kernels often lack working `ip6tables` support, and Tailscale's netfilter
+setup fails with `ip6tables: ... invalid argument`. Pass `--netfilter-mode=off`
+to `tailscale up` (the module does this automatically for authkey logins) to
+skip netfilter management. This does not affect the `tailscale0` interface or
+routing.
+
+### Checking the interface
+
+```sh
+ip link show tailscale0
+/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock status
+```
+
 ## Logs
 
 `/data/adb/tailscale/tailscale.log`
