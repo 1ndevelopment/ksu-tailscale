@@ -38,17 +38,14 @@ log() {
 
 # PIDs of tailscaled processes that belong to this module (not a system one).
 module_pids() {
-    found=0
     for p in $(pidof tailscaled 2>/dev/null); do
         if [ -r "/proc/$p/cmdline" ]; then
-            if tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null | grep -q "$STATE_DIR\|$MODDIR"; then
+            if grep -qa "$STATE_DIR" "/proc/$p/cmdline" 2>/dev/null || grep -qa "$MODDIR" "/proc/$p/cmdline" 2>/dev/null; then
                 echo "$p"
-                found=1
             fi
         else
             # No /proc info: assume any tailscaled is ours.
             echo "$p"
-            found=1
         fi
     done
     return 0
@@ -149,6 +146,11 @@ start_ts() {
         return 1
     fi
 
+    # Remove a stale socket left by a crashed previous run.
+    if [ -S "$SOCK" ] && [ -z "$(module_pids)" ]; then
+        rm -f "$SOCK"
+    fi
+
     # Determine whether to use kernel TUN (tailscale0) or userspace networking.
     # Kernel TUN needs /dev/net/tun; create it on demand for temporary-root
     # devices, and fall back to userspace networking if it cannot be provided.
@@ -184,8 +186,10 @@ start_ts() {
     fi
 
     log "starting tailscaled (tun=$TUN)"
+    # Keep tailscaled's cache/state writes inside the writable state dir;
+    # Android's root has a read-only "/" so the default /.cache path fails.
     # shellcheck disable=SC2086
-    nohup "$TAILSCALED" \
+    HOME="$STATE_DIR" XDG_CACHE_HOME="$STATE_DIR/cache" nohup "$TAILSCALED" \
         --state="$STATE_FILE" \
         --socket="$SOCK" \
         --tun="$TUN" \
@@ -207,7 +211,8 @@ start_ts() {
         log "bringing node up with authkey"
         "$TAILSCALE" --socket="$SOCK" up \
             --authkey="file:$AUTHKEY_FILE" \
-            --accept-dns="$TS_ACCEPT_DNS" >> "$LOG" 2>&1 \
+            --accept-dns="$TS_ACCEPT_DNS" \
+            --netfilter-mode=off >> "$LOG" 2>&1 \
             || log "! tailscale up failed; check authkey"
     else
         log "no $AUTHKEY_FILE found; run 'tailscale up' manually once to log in"

@@ -1,6 +1,6 @@
 id=ksu_tailscale
 name=KSU Tailscale
-version=v1.0.0
+version=v0.0.3
 versionCode=1
 author=1ndevelopment
 description=Runs the Tailscale daemon as a KernelSU/Magisk module. Works from temporary root: all state lives in /data/adb/tailscale and nothing is written to /system.

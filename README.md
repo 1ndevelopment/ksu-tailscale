@@ -36,7 +36,7 @@ Set `TAILSCALE_STABLE_URL` to use a different index.
 2. Reboot, or press the module's action button to start it now.
 3. Log in, either with an auth key or interactively:
    - Unattended: write a reusable auth key to `/data/adb/tailscale/authkey`, then restart the module.
-   - Interactive: `su -c '/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock up'` and open the printed URL.
+   - Interactive: `su -c '/data/adb/modules/ksu_tailscale/bin/tailscale --socket=/data/adb/tailscale/tailscaled.sock up --netfilter-mode=off'` and open the printed URL.
 
 ## Temporary root
 
